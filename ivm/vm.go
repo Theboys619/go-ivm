@@ -8,15 +8,17 @@ type Instruction uint16
 // Instructions
 const (
 	HALT Instruction = iota
-	ADD				// ADD - Add two registers
-	ADDL			// ADDL - Add two registers into local register
-	SET				// SET - Set Register
-	SETL			// SETG - Set Local Register
-	STORE			// STORE - Stores an register into argument list for calling functions
-	LOAD			// LOAD - loads value into register from arglist
-	PUTINT			// PUTINT - Print integer from register
-	CALL			// CALL - Jumps to instruction
-	SEND			// SEND - Returns from function
+	ADD					// ADD - Add two registers (ADD [REG] [REG] [REG])
+	ADDL				// ADDL - Add two registers into local register (ADDL [REG] [REG] [REG])
+	SET					// SET - Set Register (SET [REG] [VAL])
+	SETL				// SETG - Set Local Register (SETL [REG] [VAL])
+	STORE				// STORE - Stores an register into argument list for calling functions (STORE [REG])
+	LOAD				// LOAD - loads value into register from arglist (LOAD [REG])
+	PUTINT				// PUTINT - Print integer from register (PUTINT [REG])
+	SYS					// SYS - A Syscall to an internal function to the VM (SYS [INT])
+	CALL				// CALL - Jumps to instruction (CALL [IP])
+	SEND				// SEND - Returns from function (SEND)
+	NUMINSTRUCTIONS		// NUMINSTRUCTIONS - Number of instructions
 )
 
 // Register for storing data
@@ -51,6 +53,7 @@ func (frame *Frame) GetLocal(num int) Register {
 	return frame.locals[num]
 }
 
+// SetLocal - Set local entry in map
 func (frame *Frame) SetLocal(regnum int, reg Register) {
 	frame.locals[regnum] = reg
 }
@@ -60,12 +63,22 @@ func (frame *Frame) SetLocals(locals map[int]Register) {
 	frame.locals = locals
 }
 
+// Object - An objects for data
+type Object struct {}
+
+// Heap - For all allocated objects / structs
+type Heap struct {
+	objects []Object
+}
+
 // VM for interpretation
 type VM struct {
 	program []Instruction
 	registers []Register
+
 	args []uint16
-	frames []Frame
+	frames []*Frame
+	heap *Heap
 
 	ip int
 	fp int
@@ -77,10 +90,12 @@ func NewVM() *VM {
 		program: make([]Instruction, 0),
 		registers: make([]Register, 50),
 		args: make([]uint16, 0, 15),
-		frames: make([]Frame, 1),
+		frames: make([]*Frame, 1),
 		ip: 0,
 		fp: 0,
 	}
+
+	vm.frames[0] = NewFrame()
 
 	return vm
 }
@@ -159,6 +174,10 @@ func (vm *VM) GetFP() int {
 // SetFP - Sets the frame pointer
 func (vm *VM) SetFP(num int) {
 	vm.fp = num
+
+	if vm.frames[num] == nil {
+		vm.frames = append(vm.frames, NewFrame())
+	}
 }
 
 // advanceFP - Increment frame pointer
@@ -170,11 +189,16 @@ func (vm *VM) advanceFP(adv... int) int {
 	}
 
 	vm.fp += amount
+
+	if len(vm.frames) - 1 < vm.fp {
+		vm.frames = append(vm.frames, NewFrame())
+	}
+
 	return vm.fp
 }
 
 // GetFrame - Gets frame from fp
-func (vm *VM) GetFrame(adv... int) Frame {
+func (vm *VM) GetFrame(adv... int) *Frame {
 	amount := 0
 
 	if len(adv) > 0 {
@@ -234,9 +258,9 @@ func (vm *VM) Run(ip int) {
 
 			// vm.locals = append(vm.locals, regnum)
 			frame := vm.GetFrame()
-			frame.SetLocal(regnum, *reg)
 			
 			reg.SetValue(uint16(val))
+			frame.SetLocal(regnum, *reg)
 			vm.advanceIP(2)
 			
 		case PUTINT:
@@ -255,6 +279,7 @@ func (vm *VM) Run(ip int) {
 			vm.args = vm.args[1:]
 
 			reg.SetValue(item)
+			vm.GetFrame().SetLocal(vm.ip, *reg)
 			vm.advanceIP()
 
 		case CALL:
@@ -271,7 +296,7 @@ func (vm *VM) Run(ip int) {
 
 			vm.SetFP(vm.fp-1)
 			
-			vm.SetRegisters(vm.GetFrame())
+			vm.SetRegisters(*vm.GetFrame())
 
 			vm.SetIP(int(returninstr))
 
