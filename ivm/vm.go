@@ -8,9 +8,11 @@ type Instruction uint16
 // Instructions
 const (
 	HALT Instruction = iota
-	ADD
-	SET
-	PUTINT
+	ADD				// ADD - Add two registers
+	ADDL			// ADDL - Add two registers into local register
+	SET				// SET - Set Register
+	SETL			// SETG - Set Local Register
+	PUTINT			// PUTINT - Print integer from register
 )
 
 // Register for storing data
@@ -20,7 +22,7 @@ type Register struct {
 
 // SetValue - Sets value of register
 func (reg *Register) SetValue(val uint16) {
-	reg.data = val;
+	reg.data = val
 }
 
 // GetValue - Get value of register
@@ -32,6 +34,7 @@ func (reg *Register) GetValue() uint16 {
 type VM struct {
 	program []Instruction
 	registers []Register
+	locals []int
 	ip int
 }
 
@@ -40,6 +43,7 @@ func NewVM() *VM {
 	vm := &VM{
 		program: make([]Instruction, 0),
 		registers: make([]Register, 50),
+		locals: make([]int, 0),
 		ip: 0,
 	}
 
@@ -122,9 +126,31 @@ func (vm *VM) Run(ip int) {
 			r3.SetValue(sum)
 			vm.advanceIP()
 
+		case ADDL:
+			r1 := vm.GetRegister(int(vm.nextInstruction()))
+			r2 := vm.GetRegister(int(vm.nextInstruction()))
+			regnum3 := int(vm.nextInstruction())
+			r3 := vm.GetRegister(regnum3)
+			sum := r1.GetValue() + r2.GetValue()
+			
+			r3.SetValue(sum)
+			vm.locals = append(vm.locals, regnum3)
+			vm.advanceIP()
+
 		case SET:
-			reg := vm.GetRegister(int(vm.nextInstruction()))
+			regnum := int(vm.nextInstruction())
+			reg := vm.GetRegister(regnum)
 			val := vm.GetInstruction(1)
+
+			reg.SetValue(uint16(val))
+			vm.advanceIP(2)
+
+		case SETL:
+			regnum := int(vm.nextInstruction())
+			reg := vm.GetRegister(regnum)
+			val := vm.GetInstruction(1)
+
+			vm.locals = append(vm.locals, regnum)
 			
 			reg.SetValue(uint16(val))
 			vm.advanceIP(2)
