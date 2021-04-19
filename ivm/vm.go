@@ -12,7 +12,11 @@ const (
 	ADDL			// ADDL - Add two registers into local register
 	SET				// SET - Set Register
 	SETL			// SETG - Set Local Register
+	STORE			// STORE - Stores an register into argument list for calling functions
+	LOAD			// LOAD - loads value into register from arglist
 	PUTINT			// PUTINT - Print integer from register
+	CALL			// CALL - Jumps to instruction
+	SEND			// SEND - Returns from function
 )
 
 // Register for storing data
@@ -30,12 +34,37 @@ func (reg *Register) GetValue() uint16 {
 	return reg.data
 }
 
+// Frame - Frame for locals
+type Frame struct {
+	locals map[int]Register
+}
+
+// NewFrame - Creates new Frame struct
+func NewFrame() *Frame {
+	return &Frame{
+		locals: make(map[int]Register),
+	}
+}
+
+// GetLocal - Get local from frame
+func (frame *Frame) GetLocal(num int) Register {
+	return frame.locals[num]
+}
+
+// SetLocals - Set local map
+func (frame *Frame) SetLocals(locals map[int]Register) {
+	frame.locals = locals
+}
+
 // VM for interpretation
 type VM struct {
 	program []Instruction
 	registers []Register
-	locals []int
+	args []uint16
+	frames []Frame
+
 	ip int
+	fp int
 }
 
 // NewVM - Creates a new Virtual Machine
@@ -43,8 +72,10 @@ func NewVM() *VM {
 	vm := &VM{
 		program: make([]Instruction, 0),
 		registers: make([]Register, 50),
-		locals: make([]int, 0),
+		args: make([]uint16, 0, 15),
+		frames: make([]Frame, 1),
 		ip: 0,
+		fp: 0,
 	}
 
 	return vm
@@ -58,6 +89,11 @@ func (vm *VM) SetRegister(reg int, val uint16) {
 // GetRegister - Gets a register
 func (vm *VM) GetRegister(reg int) *Register {
 	return &vm.registers[reg]
+}
+
+// GetArg - Gets a argument register
+func (vm *VM) GetArg(arg int) uint16 {
+	return vm.args[arg]
 }
 
 // LoadProgram - Load bytecode into virutal machine
@@ -104,11 +140,35 @@ func (vm *VM) nextInstruction(adv... int) Instruction {
 	return vm.GetInstruction()
 }
 
+// GetFP - Gets the frame pointer
+func (vm *VM) GetFP() int {
+	return vm.fp
+}
+
+// advanceFP - Increment frame pointer
+func (vm *VM) advanceFP(adv... int) int {
+	amount := 1
+
+	if len(adv) > 0 {
+		amount = adv[0]
+	}
+
+	vm.fp += amount
+	return vm.fp
+}
+
+// GetFrame - Gets frame from fp
+func (vm *VM) GetFrame() Frame {
+	return vm.frames[vm.fp]
+}
+
 // Run - Runs the current program at ip
 func (vm *VM) Run(ip int) {
 	exitCode := -1
 	exited := false
 	vm.SetIP(ip)
+
+	locals := make(map[int]Register)
 	
 	for !exited {
 		switch vm.GetInstruction() {
@@ -159,6 +219,40 @@ func (vm *VM) Run(ip int) {
 			reg := vm.GetRegister(int(vm.nextInstruction()))
 			fmt.Print(reg.GetValue())
 			vm.advanceIP()
+
+		case STORE:
+			reg := vm.GetRegister(int(vm.nextInstruction()))
+			vm.args = append(vm.args, reg.GetValue())
+			vm.advanceIP()
+
+		case LOAD:
+			reg := vm.GetRegister(int(vm.nextInstruction()))
+			item := vm.args[0]
+			vm.args = vm.args[1:]
+
+			reg.SetValue(item)
+			vm.advanceIP()
+
+		case CALL:
+			instr := int(vm.nextInstruction())
+			returninstr := uint16(vm.advanceIP())
+
+			vm.args = append(vm.args, returninstr)
+			
+			for _, val := range vm.locals {
+				locals[val] = vm.registers[val]
+			}
+			vm.SetIP(instr)
+
+		case SEND:
+			returninstr := vm.args[0]
+			vm.args = vm.args[1:]
+
+			for key, reg := range locals {
+				vm.registers[key] = reg
+			}
+
+			vm.SetIP(int(returninstr))
 
 		default:
 			panic("Illegal Instruction")
