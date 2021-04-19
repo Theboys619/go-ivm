@@ -51,6 +51,10 @@ func (frame *Frame) GetLocal(num int) Register {
 	return frame.locals[num]
 }
 
+func (frame *Frame) SetLocal(regnum int, reg Register) {
+	frame.locals[regnum] = reg
+}
+
 // SetLocals - Set local map
 func (frame *Frame) SetLocals(locals map[int]Register) {
 	frame.locals = locals
@@ -79,6 +83,13 @@ func NewVM() *VM {
 	}
 
 	return vm
+}
+
+// SetRegisters - Sets all registers from frame
+func (vm *VM) SetRegisters(frame Frame) {
+	for regnum, reg := range frame.locals {
+		vm.registers[regnum] = reg
+	}
 }
 
 // SetRegister - Sets a register with a uint16 value
@@ -145,6 +156,11 @@ func (vm *VM) GetFP() int {
 	return vm.fp
 }
 
+// SetFP - Sets the frame pointer
+func (vm *VM) SetFP(num int) {
+	vm.fp = num
+}
+
 // advanceFP - Increment frame pointer
 func (vm *VM) advanceFP(adv... int) int {
 	amount := 1
@@ -158,8 +174,14 @@ func (vm *VM) advanceFP(adv... int) int {
 }
 
 // GetFrame - Gets frame from fp
-func (vm *VM) GetFrame() Frame {
-	return vm.frames[vm.fp]
+func (vm *VM) GetFrame(adv... int) Frame {
+	amount := 0
+
+	if len(adv) > 0 {
+		amount = adv[0]
+	}
+
+	return vm.frames[vm.fp + amount]
 }
 
 // Run - Runs the current program at ip
@@ -167,8 +189,6 @@ func (vm *VM) Run(ip int) {
 	exitCode := -1
 	exited := false
 	vm.SetIP(ip)
-
-	locals := make(map[int]Register)
 	
 	for !exited {
 		switch vm.GetInstruction() {
@@ -194,7 +214,9 @@ func (vm *VM) Run(ip int) {
 			sum := r1.GetValue() + r2.GetValue()
 			
 			r3.SetValue(sum)
-			vm.locals = append(vm.locals, regnum3)
+			// vm.locals = append(vm.locals, regnum3)
+			frame := vm.GetFrame()
+			frame.SetLocal(regnum3, *r3)
 			vm.advanceIP()
 
 		case SET:
@@ -210,7 +232,9 @@ func (vm *VM) Run(ip int) {
 			reg := vm.GetRegister(regnum)
 			val := vm.GetInstruction(1)
 
-			vm.locals = append(vm.locals, regnum)
+			// vm.locals = append(vm.locals, regnum)
+			frame := vm.GetFrame()
+			frame.SetLocal(regnum, *reg)
 			
 			reg.SetValue(uint16(val))
 			vm.advanceIP(2)
@@ -238,19 +262,16 @@ func (vm *VM) Run(ip int) {
 			returninstr := uint16(vm.advanceIP())
 
 			vm.args = append(vm.args, returninstr)
-			
-			for _, val := range vm.locals {
-				locals[val] = vm.registers[val]
-			}
+			vm.advanceFP()
 			vm.SetIP(instr)
 
 		case SEND:
 			returninstr := vm.args[0]
 			vm.args = vm.args[1:]
 
-			for key, reg := range locals {
-				vm.registers[key] = reg
-			}
+			vm.SetFP(vm.fp-1)
+			
+			vm.SetRegisters(vm.GetFrame())
 
 			vm.SetIP(int(returninstr))
 
