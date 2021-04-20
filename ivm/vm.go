@@ -23,16 +23,16 @@ const (
 
 // Register for storing data
 type Register struct {
-	data uint16
+	data interface{}
 }
 
 // SetValue - Sets value of register
-func (reg *Register) SetValue(val uint16) {
+func (reg *Register) SetValue(val interface{}) {
 	reg.data = val
 }
 
 // GetValue - Get value of register
-func (reg *Register) GetValue() uint16 {
+func (reg *Register) GetValue() interface{} {
 	return reg.data
 }
 
@@ -64,11 +64,42 @@ func (frame *Frame) SetLocals(locals map[int]Register) {
 }
 
 // Object - An objects for data
-type Object struct {}
+type Object struct {
+	properties []interface{}
+	methods []int
+}
 
 // Heap - For all allocated objects / structs
 type Heap struct {
 	objects []Object
+	refs int
+}
+
+// NewHeap - Creates a new Heap struct
+func NewHeap(objects int) *Heap {
+	return &Heap{
+		objects: make([]Object, objects),
+	}
+}
+
+// NewObject - Creates a new object on the heap
+func (heap *Heap) NewObject() *Object {
+	object := Object{
+		properties: make([]interface{}, 1, 20),
+		methods: make([]int, 0, 10),
+	}
+
+	heap.refs++
+
+	return &object
+}
+
+// DestroyObject - Remove object off the heap
+func (heap *Heap) DestroyObject(object *Object) {
+	object.properties = make([]interface{}, 0)
+	object.properties = nil
+	object = nil
+	heap.refs--
 }
 
 // VM for interpretation
@@ -76,7 +107,7 @@ type VM struct {
 	program []Instruction
 	registers []Register
 
-	args []uint16
+	args []interface{}
 	frames []*Frame
 	heap *Heap
 
@@ -89,8 +120,9 @@ func NewVM() *VM {
 	vm := &VM{
 		program: make([]Instruction, 0),
 		registers: make([]Register, 50),
-		args: make([]uint16, 0, 15),
+		args: make([]interface{}, 0, 15),
 		frames: make([]*Frame, 1),
+		heap: NewHeap(200),
 		ip: 0,
 		fp: 0,
 	}
@@ -118,7 +150,7 @@ func (vm *VM) GetRegister(reg int) *Register {
 }
 
 // GetArg - Gets a argument register
-func (vm *VM) GetArg(arg int) uint16 {
+func (vm *VM) GetArg(arg int) interface{} {
 	return vm.args[arg]
 }
 
@@ -225,7 +257,7 @@ func (vm *VM) Run(ip int) {
 			r1 := vm.GetRegister(int(vm.nextInstruction()))
 			r2 := vm.GetRegister(int(vm.nextInstruction()))
 			r3 := vm.GetRegister(int(vm.nextInstruction()))
-			sum := r1.GetValue() + r2.GetValue()
+			sum := r1.GetValue().(uint16) + r2.GetValue().(uint16)
 			
 			r3.SetValue(sum)
 			vm.advanceIP()
@@ -235,7 +267,7 @@ func (vm *VM) Run(ip int) {
 			r2 := vm.GetRegister(int(vm.nextInstruction()))
 			regnum3 := int(vm.nextInstruction())
 			r3 := vm.GetRegister(regnum3)
-			sum := r1.GetValue() + r2.GetValue()
+			sum := r1.GetValue().(uint16) + r2.GetValue().(uint16)
 			
 			r3.SetValue(sum)
 			// vm.locals = append(vm.locals, regnum3)
@@ -298,7 +330,7 @@ func (vm *VM) Run(ip int) {
 			
 			vm.SetRegisters(*vm.GetFrame())
 
-			vm.SetIP(int(returninstr))
+			vm.SetIP(int(returninstr.(uint16)))
 
 		default:
 			panic("Illegal Instruction")
