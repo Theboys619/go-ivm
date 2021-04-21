@@ -4,6 +4,8 @@ import "fmt"
 
 // Instruction - Instruction type (uint16)
 type Instruction uint16
+// CastTypes - A const enum for cast types
+type CastTypes uint16
 
 // Instructions
 const (
@@ -18,7 +20,18 @@ const (
 	SYS					// SYS - A Syscall to an internal function to the VM (SYS [INT])
 	CALL				// CALL - Jumps to instruction (CALL [IP])
 	SEND				// SEND - Returns from function (SEND)
+	CAST				// CAST - Casts to a type (CAST [REG] [TYPE])
+	NEW					// NEW - Creates a new object on the heap (NEW [REG] [PROPSIZE] [METHODSIZE])
+	SETPROP				// SETPROP - Sets a prop in object pointer / reg (SETPROP [REG] [PROP] [VALUE] [TYPE])
+	PROP				// PROP - Get a prop from object pointer / reg (PROP [REG] [REG2] [PROP] [TYPE])
 	NUMINSTRUCTIONS		// NUMINSTRUCTIONS - Number of instructions
+)
+
+// CastTypes
+const (
+	INT CastTypes = iota
+	CHAR
+	NUMTYPES
 )
 
 // Register for storing data
@@ -63,10 +76,36 @@ func (frame *Frame) SetLocals(locals map[int]Register) {
 	frame.locals = locals
 }
 
+// CastValue - Cast any to a type listen in CastTypes
+func CastValue(value *interface{}, casttype uint16) {
+	switch CastTypes(casttype) {
+	case INT:
+		*value = int((*value).(uint16))
+	default:
+		return
+	}
+}
+
 // Object - An objects for data
 type Object struct {
 	properties []interface{}
 	methods []int
+}
+
+// SetProperty - Sets a property in the object
+func (object *Object) SetProperty(prop int, dtype uint16, value interface{}) {
+	if prop >= len(object.properties) {
+		object.properties = append(object.properties, nil)
+	}
+	object.properties[prop] = value
+}
+
+// GetProperty - Gets a property in the object
+func (object *Object) GetProperty(prop int, dtype uint16, value *interface{}) {
+	property := object.properties[prop]
+
+	CastValue(&property, dtype)
+	*value = property
 }
 
 // Heap - For all allocated objects / structs
@@ -83,10 +122,10 @@ func NewHeap(objects int) *Heap {
 }
 
 // NewObject - Creates a new object on the heap
-func (heap *Heap) NewObject() *Object {
+func (heap *Heap) NewObject(propsize int, methodsize int) *Object {
 	object := Object{
-		properties: make([]interface{}, 1, 20),
-		methods: make([]int, 0, 10),
+		properties: make([]interface{}, propsize, propsize + 5),
+		methods: make([]int, methodsize, methodsize + 5),
 	}
 
 	heap.refs++
@@ -331,6 +370,54 @@ func (vm *VM) Run(ip int) {
 			vm.SetRegisters(*vm.GetFrame())
 
 			vm.SetIP(int(returninstr.(uint16)))
+
+		case CAST:
+			reg := vm.GetRegister(int(vm.nextInstruction()))
+			casttype := uint16(vm.GetInstruction(1))
+			vm.advanceIP(2)
+
+			if casttype >= uint16(NUMTYPES) {
+				panic("Illegal Instruction. Invalid casting type")
+			}
+
+			value := reg.GetValue()
+			CastValue(&value, casttype)
+
+			reg.SetValue(value)
+
+		case NEW:
+			reg := vm.GetRegister(int(vm.nextInstruction()))
+			propsize := uint16(vm.nextInstruction())
+			methodsize := uint16(vm.nextInstruction())
+			vm.advanceIP()
+
+			objectptr := vm.heap.NewObject(int(propsize), int(methodsize))
+			reg.SetValue(objectptr)
+
+		case SETPROP:
+			reg := vm.GetRegister(int(vm.nextInstruction()))
+			prop := uint16(vm.nextInstruction())
+			value := uint16(vm.nextInstruction())
+			proptype := uint16(vm.nextInstruction())
+			vm.advanceIP()
+
+			objectptr := reg.GetValue().(*Object)
+			
+			objectptr.SetProperty(int(prop), proptype, value)
+
+		case PROP:
+			reg := vm.GetRegister(int(vm.nextInstruction()))
+			reg2 := vm.GetRegister(int(vm.nextInstruction()))
+			prop := uint16(vm.nextInstruction())
+			proptype := uint16(vm.nextInstruction())
+			vm.advanceIP()
+
+			value := reg2.GetValue()
+			objectptr := reg.GetValue().(*Object)
+
+			objectptr.GetProperty(int(prop), proptype, &value)
+			reg2.SetValue(value)
+			vm.GetFrame().SetLocal(vm.ip, *reg2)
 
 		default:
 			panic("Illegal Instruction")
