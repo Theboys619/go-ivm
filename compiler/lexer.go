@@ -24,6 +24,11 @@ func NewToken(tokenType string, value string) *Token {
 	}
 }
 
+// NewNullToken - Creates a new Token a Null type
+func NewNullToken() *Token {
+	return NewToken("Nothing", "Nothing")
+}
+
 // SetFile - Set file inside token
 func (token *Token) SetFile(file string) {
 	token.file = file
@@ -33,6 +38,11 @@ func (token *Token) SetFile(file string) {
 func (token *Token) SetPos(line int, index int) {
 	token.line = line
 	token.index = index
+}
+
+// GetValue - Get the value of the token as a string
+func (token *Token) GetValue() string {
+	return token.value
 }
 
 // Lexer - Tokenizes given input
