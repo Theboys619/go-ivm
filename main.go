@@ -1,7 +1,9 @@
 package main
 
 import (
+	"fmt"
 	"main/ivm"
+	"main/compiler"
 )
 
 func main() {
@@ -28,4 +30,8 @@ func main() {
 	})
 
 	vm.Run(0)
+
+	lexer := compiler.NewLexer()
+	tokens := lexer.Tokenize("make x = \"Test Hello\";\n log(55+20, x);")
+	fmt.Println(tokens)
 }
