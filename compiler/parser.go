@@ -7,10 +7,10 @@ var PRECEDENCE map[string]int = map[string]int{
 	"&&": 4,
 	"||": 5,
 
-	"<": 7,  ">": 7,  "<=": 7,  ">=": 7,  "==": 7,  "!=": 7,
+	"<": 7, ">": 7, "<=": 7, ">=": 7, "==": 7, "!=": 7,
 
-	"+": 10,  "-": 10,
-	"*": 20,  "/": 20,  "%": 20,
+	"+": 10, "-": 10,
+	"*": 20, "/": 20, "%": 20,
 }
 
 // ExprTypes - The different types for each expression or statement
@@ -40,28 +40,28 @@ const (
 )
 
 var StringTypes map[string]int = map[string]int{
-	"None": None,
-	"While": While,
-	"For": For,
-	"If": If,
-	"Int": Int,
-	"Float": Float,
-	"String": String,
-	"Boolean": Boolean,
-	"Class": Class,
-	"Access": Access,
-	"Array": Array,
-	"Variable": Variable,
-	"Import": Import,
-	"Identifier": Identifier,
-	"Assign": Assign,
-	"Binary": Binary,
-	"Scope": Scope,
+	"None":         None,
+	"While":        While,
+	"For":          For,
+	"If":           If,
+	"Int":          Int,
+	"Float":        Float,
+	"String":       String,
+	"Boolean":      Boolean,
+	"Class":        Class,
+	"Access":       Access,
+	"Array":        Array,
+	"Variable":     Variable,
+	"Import":       Import,
+	"Identifier":   Identifier,
+	"Assign":       Assign,
+	"Binary":       Binary,
+	"Scope":        Scope,
 	"FunctionCall": FunctionCall,
-	"Function": Function,
+	"Function":     Function,
 	"FunctionDecl": FunctionDecl,
-	"Return": Return,
-	"Datatype": Datatype,
+	"Return":       Return,
+	"Datatype":     Datatype,
 }
 
 // AST - Main ast containing statements and expressions
@@ -71,11 +71,14 @@ type AST struct {
 
 	Op Token
 
-	Left *AST
+	Left  *AST
 	Right *AST
 
 	Block []*AST
-	Args []*AST
+	Args  []*AST
+	Scope *AST
+
+	DataType string
 }
 
 // NewAST - Create a AST Object
@@ -83,7 +86,7 @@ func NewAST(ExprType int, value Token) *AST {
 	return &AST{
 		ExprType: ExprType,
 		TokValue: value,
-		Op: *NewToken("Nothing", "Nothing"),
+		Op:       *NewToken("Nothing", "Nothing"),
 	}
 }
 
@@ -97,32 +100,37 @@ type Parser struct {
 	pos int
 }
 
-func (parser *Parser) advance(amt... int) Token {
+func (parser *Parser) advance(amt ...int) Token {
 	amount := 1
 	if len(amt) > 0 {
 		amount = amt[0]
 	}
 
-	if parser.pos + amount >= len(parser.Tokens) {
-		parser.CurTok = *NewToken("Null", "Null")
+	if parser.pos+amount >= len(parser.Tokens) {
+		parser.CurTok = *NewToken("Nothing", "Nothing")
+		return parser.CurTok
 	}
-	parser.pos += amount;
+	parser.pos += amount
 
 	parser.CurTok = parser.Tokens[parser.pos]
 	return parser.CurTok
 }
 
-func (parser *Parser) peek(amt... int) Token {
+func (parser *Parser) peek(amt ...int) Token {
 	amount := 1
-	if len(amt) > 0 { amount = amt[0] }
+	if len(amt) > 0 {
+		amount = amt[0]
+	}
 
-	if parser.pos + amount >= len(parser.Tokens) { return *NewToken("Null", "Null") }
+	if parser.pos+amount >= len(parser.Tokens) {
+		return *NewToken("Nothing", "Nothing")
+	}
 
-	return parser.Tokens[parser.pos + amount];
+	return parser.Tokens[parser.pos+amount]
 }
 
-func (parser *Parser) isNull() bool {
-	return parser.CurTok.tokenType == "Nothing" || parser.CurTok.tokenType == "Null"
+func (parser *Parser) isNull(tok Token) bool {
+	return tok.tokenType == "Nothing" || tok.tokenType == "Null"
 }
 
 func (parser *Parser) isEOF() bool {
@@ -164,7 +172,7 @@ func (parser *Parser) skipOver(tokentype string, value string, tok Token) Token 
 }
 
 func (parser *Parser) skipIgnore() {
-	for parser.isIgnore(parser.CurTok) {
+	for parser.isIgnore(parser.CurTok) && !parser.isNull(parser.CurTok) && !parser.isEOF() {
 		parser.advance()
 	}
 }
@@ -188,12 +196,12 @@ func (parser *Parser) pDelimiters(start string, end string, separator string) []
 			}
 		}
 
-		val := parser.pExpression();
+		val := parser.pExpression()
 		values = append(values, val)
 	}
 	parser.skipOver("", end, parser.CurTok)
 
-	return values;
+	return values
 }
 
 func (parser *Parser) isCallable(callStmt *AST) bool {
@@ -202,10 +210,24 @@ func (parser *Parser) isCallable(callStmt *AST) bool {
 
 func (parser *Parser) checkCall(expr *AST) *AST {
 	if parser.isType("Delimiter", "(", parser.peek()) && parser.isCallable(expr) {
-		// return parser.pCall(expr)
+		return parser.pCall(expr)
 	}
 
 	return expr
+}
+
+func (parser *Parser) pCall(expr *AST) *AST {
+	funcCall := NewAST(FunctionCall, expr.TokValue)
+	// funcCall->dotOp = nullptr;
+
+	parser.advance()
+
+	funcCall.Args = parser.pDelimiters("(", ")", ",")
+
+	// pIndexAccess(funcCall)
+	// pDotOp(funcCall)
+
+	return funcCall
 }
 
 func (parser *Parser) checkBinary(left *AST, prec int) *AST {
@@ -216,8 +238,10 @@ func (parser *Parser) checkBinary(left *AST, prec int) *AST {
 		newPrec := PRECEDENCE[opvalue]
 
 		if prec < newPrec {
+			parser.advance()
+
 			var assigns map[string]int = map[string]int{
-				"=": Assign,
+				"=":  Assign,
 				"+=": Assign,
 			}
 
@@ -230,7 +254,7 @@ func (parser *Parser) checkBinary(left *AST, prec int) *AST {
 			expr := NewAST(optype, parser.CurTok)
 			expr.Left = left
 			expr.Op = op
-			expr.Right = parser.checkBinary(parser.checkCall(parser.pAll()), newPrec);
+			expr.Right = parser.checkBinary(parser.checkCall(parser.pAll()), newPrec)
 			// expr.DataType = expr->right->dataType;
 
 			return parser.checkBinary(expr, prec)
@@ -240,8 +264,103 @@ func (parser *Parser) checkBinary(left *AST, prec int) *AST {
 	return left
 }
 
-func (parser *Parser) pAll() *AST {
+func (parser *Parser) pIdentifier(expr *AST) *AST {
+	expr.ExprType = Identifier
 
+	if !parser.isType("Delimiter", "(", parser.peek()) {
+		parser.advance()
+	}
+
+	// pIndexAccess(expr);
+
+	// Could / should change
+	// if (!pDotOp(expr)) {
+	// 	expr->dataType = pDatatype();
+	// }
+
+	return expr
+}
+
+func (parser *Parser) pFunction() *AST {
+	if !parser.isType("Identifier", "", parser.CurTok) {
+		panic(parser.CurTok.GetValue())
+	}
+
+	funcToken := parser.CurTok
+
+	ifunc := NewAST(Function, parser.CurTok)
+	parser.advance()
+
+	ifunc.Args = parser.pDelimiters("(", ")", ",")
+	ifunc.Scope = NewAST(Scope, funcToken)
+
+	// if parser.CurTok.getString() == "oftype" {
+	// 	ifunc.DataType = parser.pDatatype()
+	// } else {
+	// 	ifunc.DataType = "any";
+	// }
+
+	ifunc.Scope.Block = parser.pDelimiters("{", "}", "")
+
+	// TODO function types and return types
+
+	return ifunc
+}
+
+func (parser *Parser) pMake(tok *AST) *AST {
+	parser.advance()
+
+	if parser.isType("Delimiter", "(", parser.peek()) {
+		return parser.pFunction()
+	}
+
+	identifier := parser.pIdentifier(NewAST(None, parser.CurTok))
+	identifier.ExprType = Variable
+
+	return identifier
+}
+
+func (parser *Parser) pAll() *AST {
+	if parser.isType("Delimiter", "(", parser.CurTok) {
+		parser.advance()
+		expr := parser.pExpression()
+		parser.skipOver("Delimiter", ")", parser.CurTok)
+		return expr
+	}
+
+	token := NewAST(None, parser.CurTok)
+
+	if parser.isType("Keyword", "make", parser.CurTok) {
+		return parser.pMake(token)
+	}
+
+	if parser.isType("String", "", parser.CurTok) {
+		parser.advance()
+		token.ExprType = String
+
+		return token
+	}
+
+	if parser.isType("Int", "", parser.CurTok) {
+		parser.advance()
+		token.ExprType = Int
+
+		return token
+	}
+
+	if parser.isType("Identifier", "", parser.CurTok) {
+		return parser.pIdentifier(token)
+	}
+
+	if parser.isType("Linebreak", "", parser.CurTok) {
+		for parser.isType("Linebreak", "", parser.CurTok) {
+			parser.advance()
+		}
+
+		return parser.pAll()
+	}
+
+	panic("Unexpected error. Failed parsing. Got token " + parser.CurTok.GetValue())
 }
 
 // pExpression
@@ -250,13 +369,36 @@ func (parser *Parser) pExpression() *AST {
 }
 
 // Parse - Starts the parsing of the tokens
-func (parser *Parser) Parse(tokens []Token) {
-	parser.Tokens = tokens
-	parser.Ast = NewAST(Scope, *NewToken("Nothing", "Nothing"))
+func (parser *Parser) Parse(tokens []Token) *AST {
+	parser.LoadTokens(tokens)
+	parser.Ast = NewAST(Scope, *NewToken("Nothing", "_MAIN_"))
 
 	var block []*AST = make([]*AST, 0, 50)
 
-	for !parser.isNull() && !parser.isEOF() {
-		block = append(block, parser.pExpression())
+	for !parser.isNull(parser.CurTok) && !parser.isEOF() {
+		expr := parser.pExpression()
+		block = append(block, expr)
+
+		if parser.isIgnore(parser.CurTok) {
+			parser.skipIgnore()
+		}
+	}
+	parser.Ast.Block = block
+
+	return parser.Ast
+}
+
+// LoadTokens - Loads tokens into parser
+func (parser *Parser) LoadTokens(tokens []Token) {
+	parser.Tokens = tokens
+	parser.CurTok = tokens[0]
+}
+
+func NewParser() *Parser {
+	return &Parser{
+		Tokens: make([]Token, 0, 20),
+		Ast:    nil,
+		CurTok: *NewNullToken(),
+		pos:    0,
 	}
 }
