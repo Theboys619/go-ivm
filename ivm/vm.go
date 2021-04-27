@@ -13,12 +13,16 @@ const (
 	ADDRL    = 0x16 // ADD Register and Literal
 	ADDRR    = 0x17 // ADD Register and Register
 	MOVL     = 0x18 // MOV Literal into a register
+	CALL     = 0x19 // CALL jump to address and save registers
+	CALLREG     = 0x1a // CALL jump to address from register and save registers
+	RET      = 0x1b // RET from call
 )
 
 // StackT - The stack struct
 type StackT struct {
 	Data []uint16
 	Size int
+	FrameSize int
 }
 
 // NewStack - Creates a Stack struct
@@ -26,21 +30,18 @@ func NewStack(size int) *StackT {
 	return &StackT{
 		Data: make([]uint16, size/2+(size/4), size),
 		Size: size,
+		FrameSize: 0,
 	}
 }
 
-// Push - Push data onto stack
-func (stack *StackT) Push(item uint16) {
-	stack.Data = append(stack.Data, item)
+// GetValue - Gets a value in the stack at an address (index)
+func (stack *StackT) GetValue(address uint16) uint16 {
+	return stack.Data[address]
 }
 
-// Pop - Pop item of of stack
-func (stack *StackT) Pop() uint16 {
-	stackLen := len(stack.Data)
-	item := stack.Data[stackLen-1]
-	stack.Data = stack.Data[:stackLen-1]
-
-	return item
+// GetValue8 - Gets a value in the stack at an address (index)
+func (stack *StackT) GetValue8(address uint8) uint8 {
+	return uint8(stack.Data[address] & 0xff00)
 }
 
 // Memory - Data for memory
@@ -146,12 +147,16 @@ func (vm *VM) Push(val uint16) {
 	sp--
 	vm.Stack.Data[sp] = val
 	vm.Mem.SetRegister("sp", sp)
+
+	vm.Stack.FrameSize++
 }
 
 func (vm *VM) Pop() uint16 {
 	sp := vm.Mem.GetRegister("sp")
 	val := vm.Stack.Data[sp]
 	vm.Mem.SetRegister("sp", sp+1)
+
+	vm.Stack.FrameSize--
 
 	return val
 }
@@ -188,6 +193,42 @@ func (vm *VM) Fetch16() uint16 {
 	ip := vm.Mem.GetRegister("ip")
 
 	return vm.Mem.GetValue16(ip)
+}
+
+func (vm *VM) pushFrame() {
+	vm.Push(vm.Mem.GetRegister("r1"))
+	vm.Push(vm.Mem.GetRegister("r2"))
+	vm.Push(vm.Mem.GetRegister("r3"))
+	vm.Push(vm.Mem.GetRegister("r4"))
+	vm.Push(vm.Mem.GetRegister("r5"))
+	vm.Push(vm.Mem.GetRegister("r6"))
+	vm.Push(vm.Mem.GetRegister("r7"))
+	vm.Push(vm.Mem.GetRegister("r8"))
+	vm.Push(vm.Mem.GetRegister("ip"))
+	vm.Push(vm.Mem.GetRegister("bp"))
+	vm.Mem.SetRegister("bp", vm.Mem.GetRegister("sp"))
+	vm.Stack.FrameSize = 0
+}
+
+func (vm *VM) popFrame() {
+	vm.Mem.SetRegister("sp", vm.Mem.GetRegister("bp"))
+	vm.Mem.SetRegister("bp", vm.Pop())
+	vm.Mem.SetRegister("ip", vm.Pop())
+	vm.Mem.SetRegister("r8", vm.Pop())
+	vm.Mem.SetRegister("r7", vm.Pop())
+	vm.Mem.SetRegister("r6", vm.Pop())
+	vm.Mem.SetRegister("r5", vm.Pop())
+	vm.Mem.SetRegister("r4", vm.Pop())
+	vm.Mem.SetRegister("r3", vm.Pop())
+	vm.Mem.SetRegister("r2", vm.Pop())
+	vm.Mem.SetRegister("r1", vm.Pop())
+
+	nArgs := vm.Pop()
+
+	var i uint16;
+	for i = 0; i < nArgs; i++ {
+		vm.Pop()
+	}
 }
 
 func (vm *VM) pushLiteral() {
@@ -259,6 +300,27 @@ func (vm *VM) iMOVL() {
 	vm.NextInstruction()
 }
 
+func (vm *VM) iCALL() {
+	address := vm.NextInstruction16()
+	vm.NextInstruction()
+	vm.NextInstruction()
+
+	vm.pushFrame()
+	vm.Mem.SetRegister("ip", address)
+}
+
+func (vm *VM) iCALLREG() {
+	regnum := vm.NextInstruction()
+	regName, ok := vm.Mem.RegisterMap[int(regnum)]
+
+	if !ok {
+		panic("Register " + regName + " was not resolved")
+	}
+
+	vm.pushFrame()
+	vm.Mem.SetRegister("ip", vm.Mem.GetRegister(regName))
+}
+
 // Debug - Get values
 func (vm *VM) Debug() {
 	fmt.Println("Memory:")
@@ -292,27 +354,36 @@ func (vm *VM) Run() {
 			halted = true
 			break
 
-		case PUSHL:
+		case PUSHL: // [1byte] [2bytes] - 3 bytes
 			vm.pushLiteral()
 
-		case PUSHR:
+		case PUSHR: // [1byte] [1byte] - 2 bytes
 			vm.pushRegister()
 
-		case PUSHREGV:
+		case PUSHREGV: // [1byte] [1byte] - 2 bytes
 			vm.pushRegValue()
 
-		case POP:
+		case POP: // [1byte] [1byte] - 2 bytes
 			vm.iPOP()
 
-		case ADD:
+		case ADD: // [1byte] - 1 byte
 			vm.iADD()
 
-		case MOVL:
+		case MOVL: // [1byte] [1byte] [2byte] - 4 bytes
 			vm.iMOVL()
+
+		case CALL:
+			vm.iCALL()
+
+		case CALLREG:
+			vm.iCALLREG()
+
+		case RET:
+			vm.popFrame()
 
 		default:
 			halted = true
-			break
+			panic("Illegal instruction")
 		}
 	}
 }
