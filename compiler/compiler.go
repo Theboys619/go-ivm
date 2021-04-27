@@ -88,11 +88,21 @@ func (compiler *Compiler) CALL(instructionnum string) []uint16 {
 func (compiler *Compiler) cArgs(args []*AST, scope *ImpScope) []uint16 {
 	instructions := make([]uint16, 0, 20)
 	for i, arg := range args {
-		instructions = append(instructions, compiler.STORE(string(i))...)
+		// instructions = append(instructions, compiler.STORE(string(i))...)
+		if arg.ExprType == Identifier {
+			variable := scope.Variables[arg.TokValue.GetValue()]
+			instructions = append(instructions, compiler.STORE(string(variable))...)
+			continue
+		}
+
 	}
 }
 
-func (compiler *Compiler) cString(expr *AST, scope *ImpScope) []uint16 {
+func (compiler *Compiler) cString(expr *AST, scope *ImpScope) ([]uint16, interface{}) {
+	literalReg := len(scope.Variables) + 5
+
+	value := expr.TokValue.GetValue()
+	instructions := make([]uint16, 0, 5)
 
 }
 
@@ -112,7 +122,7 @@ func (compiler *Compiler) cSyscall(expr *AST, scope *ImpScope) []uint16 {
 	funcname := expr.TokValue.GetValue()
 
 	switch funcname {
-	case PUTINT:
+	case "PUTINT":
 
 	}
 }
@@ -156,7 +166,8 @@ func (compiler *Compiler) Compile(ast *AST, scope *ImpScope) []uint16 {
 		return compiler.cScope(ast, scope)
 
 	case String:
-		return compiler.cString(ast, scope)
+		t, _ := compiler.cString(ast, scope)
+		return t
 
 	case Variable:
 		return compiler.cVariable(ast, scope)
