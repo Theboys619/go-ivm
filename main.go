@@ -10,12 +10,13 @@ func main() {
 	// fmt.Println("Hello, World!")
 	vm := ivm.NewVM(256)
 	vm.LoadProgram([]uint8{
-		ivm.PUSHL, 0x0002,
-		ivm.PUSHL, 0x0002,
+		ivm.PUSHL, 0x00, 0x02,
+		ivm.PUSHL, 0x00, 0x02,
 		ivm.ADD,
 		ivm.POP, 0x03,
 		ivm.PUSHR, 0x00,
 		ivm.PUSHREGV, 0x00,
+		ivm.MOVL, 0x04, 0x00, 0x06,
 		ivm.HALT,
 	})
 	vm.Run()

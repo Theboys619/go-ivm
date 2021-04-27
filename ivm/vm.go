@@ -12,6 +12,7 @@ const (
 	ADD      = 0x15 // ADD From stack
 	ADDRL    = 0x16 // ADD Register and Literal
 	ADDRR    = 0x17 // ADD Register and Register
+	MOVL     = 0x18 // MOV Literal into a register
 )
 
 // StackT - The stack struct
@@ -67,13 +68,13 @@ func (mem *Memory) LoadMem(data []uint8) {
 }
 
 // GetValue8 - Gets the value at an adress (uint8)
-func (mem *Memory) GetValue8(address uint8) uint8 {
+func (mem *Memory) GetValue8(address uint16) uint8 {
 	return mem.Data[address]
 }
 
 // GetValue16 - Gets the value at an address (uint16)
 func (mem *Memory) GetValue16(address uint16) uint16 {
-	return uint16((mem.Data[address&0xff00] << 8) | mem.Data[address&0x00ff])
+	return uint16((mem.Data[address] << 8) | mem.Data[address+1])
 }
 
 // GetRegister - Get a register address
@@ -83,7 +84,7 @@ func (mem *Memory) GetRegister(name string) uint16 {
 
 // GetRegisterVal8 - Gets the value the register is pointing to. (uint8)
 func (mem *Memory) GetRegisterVal8(name string) uint8 {
-	return mem.GetValue8(uint8(mem.Registers[name] & 0x00ff))
+	return mem.GetValue8(mem.Registers[name])
 }
 
 // GetRegisterVal16 - Gets the value the register is pointing to. (uint16)
@@ -162,7 +163,7 @@ func (vm *VM) NextInstruction() uint8 {
 
 	vm.Mem.SetRegister("ip", ip)
 
-	return vm.Mem.GetValue8(uint8(ip & 0x00ff))
+	return vm.Mem.GetValue8(ip)
 }
 
 // NextInstruction16 - Gets the next instruction
@@ -179,10 +180,10 @@ func (vm *VM) NextInstruction16() uint16 {
 func (vm *VM) Fetch() uint8 {
 	ip := vm.Mem.GetRegister("ip")
 
-	return vm.Mem.GetValue8(uint8(ip & 0x00ff))
+	return vm.Mem.GetValue8(ip)
 }
 
-// Fetch16 - Fetches the current instruction as uint17
+// Fetch16 - Fetches the current instruction as uint16
 func (vm *VM) Fetch16() uint16 {
 	ip := vm.Mem.GetRegister("ip")
 
@@ -190,15 +191,19 @@ func (vm *VM) Fetch16() uint16 {
 }
 
 func (vm *VM) pushLiteral() {
-	value := vm.NextInstruction16()
-	vm.Push(value)
+	value1 := vm.NextInstruction()
+	value2 := vm.NextInstruction()
+	vm.Push(uint16((value1 << 8) | value2))
 	vm.NextInstruction()
 }
 
 func (vm *VM) pushRegister() {
 	vm.NextInstruction()
 	regnum := vm.Fetch()
-	registerName := vm.Mem.RegisterMap[int(regnum)]
+	registerName, ok := vm.Mem.RegisterMap[int(regnum)]
+	if !ok {
+		panic("Register " + registerName + " was not resolved")
+	}
 
 	vm.Push(vm.Mem.GetRegister(registerName))
 
@@ -209,7 +214,10 @@ func (vm *VM) pushRegister() {
 func (vm *VM) pushRegValue() {
 	vm.NextInstruction()
 	regnum := vm.Fetch()
-	registerName := vm.Mem.RegisterMap[int(regnum)]
+	registerName, ok := vm.Mem.RegisterMap[int(regnum)]
+	if !ok {
+		panic("Register " + registerName + " was not resolved")
+	}
 
 	vm.Push(vm.Mem.GetRegisterVal16(registerName))
 	vm.NextInstruction()
@@ -227,9 +235,27 @@ func (vm *VM) iPOP() {
 	x := vm.Pop()
 
 	regnum := vm.NextInstruction()
-	registerName := vm.Mem.RegisterMap[int(regnum)]
+	registerName, ok := vm.Mem.RegisterMap[int(regnum)]
+	if !ok {
+		panic("Register " + registerName + " was not resolved")
+	}
+
 	vm.Mem.SetRegister(registerName, x)
 
+	vm.NextInstruction()
+}
+
+func (vm *VM) iMOVL() {
+	regnum := vm.NextInstruction()
+	regName, ok := vm.Mem.RegisterMap[int(regnum)]
+
+	if !ok {
+		panic("Register " + regName + " was not resolved")
+	}
+
+	literal := vm.NextInstruction16()
+	vm.Mem.SetRegister(regName, literal)
+	vm.NextInstruction()
 	vm.NextInstruction()
 }
 
@@ -280,6 +306,9 @@ func (vm *VM) Run() {
 
 		case ADD:
 			vm.iADD()
+
+		case MOVL:
+			vm.iMOVL()
 
 		default:
 			halted = true
