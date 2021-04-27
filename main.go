@@ -13,6 +13,9 @@ func main() {
 		ivm.PUSHL, 0x0002,
 		ivm.PUSHL, 0x0002,
 		ivm.ADD,
+		ivm.POP, 0x03,
+		ivm.PUSHR, 0x00,
+		ivm.PUSHREGV, 0x00,
 		ivm.HALT,
 	})
 	vm.Run()
