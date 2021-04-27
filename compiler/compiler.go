@@ -112,7 +112,7 @@ func (compiler *Compiler) cSyscall(expr *AST, scope *ImpScope) []uint16 {
 	funcname := expr.TokValue.GetValue()
 
 	switch funcname {
-	case PUTINT:
+	case "PUTINT":
 
 	}
 }
